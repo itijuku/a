@@ -1,0 +1,92 @@
+
+    const projectIds = ["1190624252","1187349297","1241860236","1190887332","1241439237","1177434642","1190632146","1188288011","1190740957","1191080226"];
+    let projects:[string,any,boolean][] = [];
+    for(const id of projectIds){
+        const p = await st.connect_project(id);
+        const nowcommentArray = await p.get_comment(1);
+        if(nowcommentArray.length){
+            const lastcomment = nowcommentArray[0];
+            if(lastcomment){
+                projects.push([id,lastcomment,true]);
+            }
+        }else{
+            projects.push([id,"",false]);
+        }
+    }
+
+    let i = 0;
+
+    while(1){
+        try{
+            const p = projects[i % projects.length];
+            if(!p || !projects.length){
+                throw new Error("projects.length === 0");
+            }
+
+            const project = await st.connect_project(p[0]);
+            const nowcommentArray = await project.get_comment(1);
+            if(p[2]){
+                const nowcomment = nowcommentArray[0];
+                if(!nowcommentArray.length){
+                    projects[i % projects.length] = [p[0],"",false];
+                    continue;
+                }
+
+                if(nowcomment && typeof p[1] !== "string" && p[1].content !== nowcomment.content){
+                    console.log(nowcomment.content);
+                    const now = new Date();
+                    const nowTime = now.toLocaleString();
+
+                    const res:string|boolean = await checkContent(nowcomment.content);
+                    if(typeof res === "string"){
+                        await nowcomment.reply(
+                            `【AIが利用規約違反に該当する可能性があると判断しました。※一概に内容が正しい訳ではありません。これはSOI組織により作成されたbotです。お問い合わせは@ZAIMUSYOにお願い致します】AIによる指摘:${res}`
+                        )
+                    }
+                    projects[i % projects.length] = [p[0],nowcomment,true];
+                }
+
+            }else{
+                if(nowcommentArray.length){
+                    const nowcomment = nowcommentArray[0];
+                    if(nowcomment){
+                        console.log(nowcomment.content);
+                        const now = new Date();
+                        const nowTime = now.toLocaleString();
+
+                        const res:string|boolean = await checkContent(nowcomment.content);
+                        if(typeof res === "string"){
+                            await nowcomment.reply(
+                                `【AIが利用規約違反に該当する可能性があると判断しました。※一概に内容が正しい訳ではありません。これはSOI組織により作成されたbotです。お問い合わせは@ZAIMUSYOにお願い致します】AIによる指摘:${res}`
+                            )
+                        }
+
+                        projects[i % projects.length] = [p[0],nowcomment,true];
+                    }
+                }
+            }
+            i++;
+            await sleep(1000);
+        }catch(e){
+            console.log("error:",e,(new Date()).toLocaleString());
+        }
+
+    }
+})();
+
+async function checkContent(content:string) {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite",
+        systemInstruction:`
+役割: コメントの違反率を判定。0.5未満→数値のみ、0.5以上→短い警告文＋数値を出力。
+出力例: 0.23 / 不適切表現は控えてください。違反率:0.76
+禁止: 「違反率(違反率が0.5未満の場合のみ禁止)」「%」などの語句、上から目線、意図の要求。
+規約: 憎悪・差別・暴力・性的・下品・個人情報・違法・スパム・広告禁止。Scratch宣伝は原則不可だが例外あり。
+`
+     });
+    const result = await model.generateContent(content);
+    const res = result.response.text();
+    console.log(res)
+    if(isNaN(Number(res.trim()))){
+        return res;
+    }return false;
+}
